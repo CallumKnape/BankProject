@@ -2,27 +2,31 @@ package BankProject
 
 import java.io.Serializable
 
+//This class extends Java's Serializable class and is given a SerialVersionUID Long to allow it to be
+//written to, and read from a file
 @SerialVersionUID(114L)
-class UserAccount (admin: Boolean, un: String, pw: String)  extends Serializable{
+class UserAccount (admin: Boolean, un: String, pw: String, list1: List[CurrentAccount], list2: List[SavingsAccount])  extends Serializable{
 
-  //Contains details about the user.
 
   private val adm: Boolean = admin
   private val username: String = un
   private val password: String = pw
 
-  var currAccs: List[CurrentAccount] = List[CurrentAccount](new CurrentAccount("Main current account"))
-  var savAccs: List[SavingsAccount] = List[SavingsAccount]()
+  var currAccs: List[CurrentAccount] = list1
+  var savAccs: List[SavingsAccount] = list2
 
+  //Regardless of whether a list was provided to this class, or one had to be made using the auxiliary
+  //constructor later, the activeAccount is set to the first element of the CurrentAccounts list.
   var activeAccount: Account = currAccs.head
 
+  //When a new user account is first made, it won't have a list of Current Accounts or Savings Accounts to pass to
+  //this class. Therefore, this constructor is used instead, calling the main constructor with a CurrentAccount list
+  //with one new CurrentAccount entry, and an empty SavingsAccount list.
+  def this(admin: Boolean, un: String, pw: String){
+    this(admin,un,pw, List[CurrentAccount](new CurrentAccount("Main current account")), List[SavingsAccount]())
+  }
 
-  //Create a normal account on creation.
-  //A savings account needs to be created on demand later.
-  //Should these be saved as a list? A user could have more than one, right?
-  //It's recommended to have multiple savings account!
-  //One for your dream car, one for your holiday, one for emergencies etc.
-
+  //Getter methods that return this class' values.
   def isAdmin: Boolean = { adm }
   def getUsername: String = { username }
   def getPassword: String = { password }
@@ -31,8 +35,11 @@ class UserAccount (admin: Boolean, un: String, pw: String)  extends Serializable
   def getCurrentAccountList: List[CurrentAccount] = { currAccs }
   def getSavingAccountList: List[SavingsAccount] = { savAccs }
 
-  //It'd be nice to give names to your accounts
-  //That way, when the user wants to switch to a different account, they can use names to identify them
+  //When the user attempts to make a new Current Account for themselves, this method is called.
+  //It checks that the user hasn't already got 3 or more Current Accounts, and if so, creates a
+  //new one. currAccs :+ newAcc doesn't exactly mean that the account is being added to the list,
+  //but rather that an entirely new list is made, using all the contents of the current list, plus
+  //the newAcc.
   def createNewCurrentAccount(accountName: String = ""): Boolean ={
     if(currAccs.length<3) {
       val newAcc: CurrentAccount = CurrentAccount(accountName)
@@ -43,6 +50,7 @@ class UserAccount (admin: Boolean, un: String, pw: String)  extends Serializable
     }
   }
 
+  //Almost identical to the above, just with the SavingsAccount list.
   def createNewSavingsAccount(accountName: String = ""): Boolean ={
     if(savAccs.length<3) {
       val newAcc: SavingsAccount = SavingsAccount(accountName)
@@ -62,7 +70,3 @@ class UserAccount (admin: Boolean, un: String, pw: String)  extends Serializable
     }
   }
 }
-
-
-
-

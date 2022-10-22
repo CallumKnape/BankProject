@@ -2,15 +2,16 @@ package BankProject
 
 import java.io.Serializable
 
+//This abstract class extends Java's Serializable class and is given a SerialVersionUID Long to allow it to be
+//written to, and read from a file
 @SerialVersionUID(114L)
 abstract class Account extends Serializable{
+  //As an abstract class, variables and methods are declared without a body or a value.
+  //Classes that extend this abstract class are forced to assign these variables themselves,
+  //and to define the methods' behaviours
   var money: Double
   var accName: String
-  //What else do savings accounts and current accounts have in common?
 
-  //We could make checkBalance a String that's called from a println()
-  //withdrawMoney an Int?
-  //What about depositMoney?
   def withdrawMoney(request: Double): Boolean
   def depositMoney(request: Double): Boolean
   def checkBalance(): Double
@@ -19,44 +20,49 @@ abstract class Account extends Serializable{
 
 case class SavingsAccount(name: String = "") extends Account{
 
+  //By extending Account, these two variables must be overridden with an assigned value.
   override var money = 0.0
   override var accName = name
 
+  //The methods must also be defined.
   override def withdrawMoney(request: Double): Boolean ={
-    //Did you want different logic here because savings account?
-    //You shouldn't allow a typical withdrawal, but you should allow a transfer to another account, right?
-    //But you can't do that here. You can't tell which method called this one. So the behaviour needs to
-    //be in BankProject.Main.scala
+    //The "request" parameter refers to the amount of money that has been asked to withdraw from this account.
+    //If that amount is taken off this account's current amount of money and results in less than 0, or if the
+    //requested amount is 0 or a negative number, we reject the request by returning false and performing no
+    //other actions.
     if(money-request <0.0 || request <= 0.0){
       false
     }else{
+      //Otherwise, we take away the requested amount from this account's money and return true.
       money -= request
       true
     }
   }
   override def depositMoney(request: Double): Boolean ={
+    //For the purposes of this project, SavingsAccounts cannot hold more than £85,000.
+    //This if statement ensures that this limit is not exceeded by the money coming in, nor does the requested amount
+    //equal 0 or less.
     if(money+request>85000.00 || request <= 0.0){
       false
     }else{
+      //If the amount to deposit is acceptable, we simply add it to this account's current money and return true
       money += request
       true
     }
   }
   override def checkBalance(): Double ={
+    //Effectively a getter method, returning the amount of money in this account
     money
   }
 }
 
+//Almost identical to the SavingsAccount class above, except that this class does not have a £85,000 limit
 case class CurrentAccount(name: String = "") extends Account{
 
   override var money = 0.0
   override var accName = name
 
   override def withdrawMoney(request: Double): Boolean ={
-    //We can make a limit to how much money can be withdrawn at once and throw an exception if it's too high
-
-    //Refine this if statement. You're catching everything together here. Separate them for different exceptions,
-    //then remove the default message back in BankProject.Main.scala
     if (money - request < 0.0 || request <= 0.0) {
       false
     } else {
@@ -76,4 +82,3 @@ case class CurrentAccount(name: String = "") extends Account{
     money
   }
 }
-

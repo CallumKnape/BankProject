@@ -1,6 +1,6 @@
 package BankProject
 
-import java.sql.{Connection, DriverManager, PreparedStatement}
+import java.sql.{Connection, DriverManager, PreparedStatement, Blob}
 import scala.collection.mutable
 
 object Main{
@@ -14,9 +14,9 @@ object Main{
 object BankProject{
 
   //An enumerator object with values representing every screen that the user can switch to.
-  //Each value is assigned as a WhichScreen object, overriding the behaviour method, which
-  //makes a call to another appropriate method that'll perform all the actions relevant to
-  //the screen that the user is on.
+  //Each value is assigned as a WhichScreen object, which overrides a "behaviour" method which is
+  //declared later in the enumerator object. Each overridden behaviour method makes a call to another
+  //appropriate method that'll perform all the actions relevant to the screen that the user is on.
   object en extends Enumeration {
 
     type en = Value
@@ -47,13 +47,15 @@ object BankProject{
     val exitProgram: Value          = new WhichScreen { def behaviour: Any = { exitProgramHandler() } }
 
     //As an abstract class, the behaviour method must be defined by any Value using it.
+    //By extending Val(), it sets itself up to be accepted as a value assigned to a Value variable.
     protected abstract class WhichScreen extends Val() { def behaviour: Any }
 
     //Values would normally return errors that it cannot act as a WhichScreen object, so
     //implicit is used here to give additional context to each Value before errors are thrown.
     //In particular, the Value parameter is told to be an instance of WhichScreen, causing
-    //a type cast that allows Values to behave as if they were WhichScreen objects, resolving
-    //any errors.
+    //a type cast that allows Values to behave as if they were WhichScreen objects. Since
+    //WhichScreen objects extend Val(), all methods that Values normally have can still be called,
+    //avoiding issues with them being unable to find anything they normally would.
     //This is used later in the mainLoop method, where the abstract behaviour method can be
     //called on the enumerator value variable to get the appropriate behaviour, instead of
     //creating a long match/case or if else statement to check the value and call the
@@ -62,7 +64,7 @@ object BankProject{
   }
 
   //This hashmap uses a String as a key, which corresponds to a user's username,
-  //and a BankProject.UserAccount as a value, corresponding to the user's account details.
+  //and a UserAccount as a value, corresponding to the user's account details.
   //Values initially given to this HashMap are given from the readFromFile method.
   val accountHashMap: mutable.HashMap[String, UserAccount] = readFromFile()
 
@@ -71,12 +73,12 @@ object BankProject{
   var state: en.en = en.start
 
   //The programRunning boolean is used within the mainLoop method to check whether
-  //the loop should keep on going, because the user is still making use of it.
+  //the loop should keep on going, because the user is still making use of this program.
   //When the user decides to exit the program, it will be set to false to escape
-  //the loop and reach the end of the program.
+  //the loop and reach the end of the program, terminating it.
   var programRunning: Boolean = true
 
-  //The acc variable stores the BankProject.UserAccount object for the user that has logged in.
+  //The acc variable stores the UserAccount object for the user that has logged in.
   //It is used as an easier way to draw information from the user's account, instead
   //of needing to constantly reference the HashMap with a saved username variable.
   var acc: UserAccount = _
@@ -109,7 +111,7 @@ object BankProject{
 
     //When this program first runs, it will create a new database called CallumBankProject.
     //If the database already exists, because this is the second or later time this program is running,
-    //this command does nothing.
+    //this command does nothing, thanks to the "if not exists" argument in the command.
     val startDatabase: PreparedStatement = connection.prepareStatement("CREATE DATABASE IF NOT EXISTS CallumBankProject;")
     startDatabase.execute()
 
@@ -138,8 +140,11 @@ object BankProject{
     val checkTable = connection.createStatement()
     val results = checkTable.executeQuery("SELECT username FROM userAccountsCallum")
     println("\nUsers found in userAccountsCallum table: ")
+    //For as long as the query has more lines to read through, we iterate through a loop that gets the
+    //next string found in the username column and prints it to the console.
     while (results.next()) {
-      println(results.getString("username"))
+      val un = results.getString("username")
+      println(un)
     }
   } catch {
         //If any error occurs, the database hasn't been set up properly, so some details should be fixed
@@ -151,7 +156,7 @@ object BankProject{
   }
 
   //readFromFile() is used to give accountHashMap its initial values based on what this method can find
-  //from a file. It uses java libraries for file input and object input, so they are imported just for
+  //from different files. It uses java libraries for file input and object input, so they are imported just for
   //this method.
   def readFromFile(): mutable.HashMap[String,UserAccount] ={
     import java.io._
@@ -166,21 +171,34 @@ object BankProject{
       val ois: ObjectInputStream = new ObjectInputStream(fis)
 
       //Each time this loop makes an iteration, it reads one object from the file, then attempts to
-      //cast that object as a BankProject.UserAccount, allowing the rest of this program to use it appropriately.
-      //The getUsername, isAdmin and getPassword methods are called on the BankProject.UserAccount object to
-      //make an entry into the HashMap.
-      //This loop will continue happening until a EOFException is thrown, for reaching the end of
-      //the file and having no more objects to read.
+      //cast that object as a UserAccount, allowing the rest of this program to use it appropriately.
+      //The getUsername, isAdmin and getPassword methods are called on the UserAccount object,
+      //and the username is used to find a file with the same name, to get two lists,
+      //one corresponding to the list of CurrentAccount objects that the UserAccount formerly held, and
+      //the other corresponding to the list of SavingsAccounts. Since these files will always only have
+      //these two lists, a nested loop isn't needed, nor a reason to catch an EOFException from them while
+      //still continuing the UserAccount loop.
+      //This loop will continue happening until an EOFException is thrown, for reaching the end of
+      //the CallumUserAccounts.txt file and having no more objects to read.
       while (true) {
         val obj = ois.readObject()
         val ua: UserAccount = obj.asInstanceOf[UserAccount]
 
-        hashMapFromFile.put(ua.getUsername, new UserAccount(ua.isAdmin,ua.getUsername,ua.getPassword))
+        val fisi: FileInputStream = new FileInputStream(new File(ua.getUsername) + ".txt")
+        val oisi: ObjectInputStream = new ObjectInputStream(fisi)
+
+        val l1 = oisi.readObject()
+        val l2 = oisi.readObject()
+
+        val list1 = l1.asInstanceOf[List[CurrentAccount]]
+        val list2 = l2.asInstanceOf[List[SavingsAccount]]
+
+        hashMapFromFile.put(ua.getUsername, new UserAccount(ua.isAdmin,ua.getUsername,ua.getPassword,list1,list2))
       }
       hashMapFromFile
     }catch{
-          //That exception is caught here, and the HashMap created earlier, with entries added from what
-          //was found in the file, is returned back to the accountHashMap.
+          //That EOFException is caught here, and the HashMap created earlier, with entries added from what
+          //was found in the files, is returned back to the accountHashMap that called this whole method.
       case e: EOFException => hashMapFromFile
       //The first time this program runs, there is not likely to be a file to read from at all, so this
       //error is thrown instead. It can be safely ignored and the accountHashMap will be initialised as
@@ -193,9 +211,9 @@ object BankProject{
 
   //*******************************************************************************************************************
 
-  //Called from BankProject.Main.main, this method is the loop that keeps this program running after the user goes through
+  //Called from Main.main, this method is the loop that keeps this program running after the user goes through
   //their options. programRunning is the last thing to be turned to false in exitProgram() and is the intended
-  //way to leave this loop and this program.
+  //way to leave this loop and this program safely.
   def mainLoop(): Unit ={
     print("Welcome to the Bank of Banks! ")
     while (programRunning) {
@@ -214,15 +232,16 @@ object BankProject{
     println("1) Log in")
     println("2) Create new user account")
     println("3) Exit program")
+    print("Input: ")
     try {
       //We read the Int given by the user
       val i: Int = scala.io.StdIn.readInt()
       println("\n\n\n") //Three empty lines to space things out
-      //then compare the Int to find a match. The value of "State" is changed so that a different method is called,
-      //allowing the user to navigate through menus to reach the option they are looking for.
+      //We then compare the Int to find a match. The value of "state" is changed so that a different method is called
+      //back in the mainLoop, allowing the user to navigate through menus to reach the option they are looking for.
       //If the user input an Int that is not 1, 2 or 3, the _ result is triggered, and instead of changing the value
       //of "state", a message is printed. Since "state" didn't change, the next iteration of the mainLoop brings the
-      //user straight back here again.
+      //user straight back here again, for a second try.
       i match {
         case 1 => state = en.logIn
         case 2 => state = en.accountRegister
@@ -241,6 +260,8 @@ object BankProject{
 
   //*******************************************************************************************************************
   def logInScreen(): Unit = {
+    //The log in screen, where we ask the user to input an existing username and password to access their user
+    //account in this program.
     println("Log in. To return to the start screen, input 'back' as your username.")
     print("Username: ")
     val un: String = scala.io.StdIn.readLine()//We ask the user for their username
@@ -248,7 +269,7 @@ object BankProject{
       //If the user inputs "Back" in any case, it is converted to lower case and compared here, triggering
       //this if statement. "state" is changed back to the start screen and return is used to exit this method
       //early, preventing the rest of the code in this method from executing. The mainLoop will then move on
-      //to the next iteration, where "state" now makes it load the start screen instead of this.
+      //to the next iteration, where "state" now makes it load the start screen instead of this screen.
       println("\n\n\n")
       state = en.start
       return //Exits this method early, preventing any code beyond this point from executing.
@@ -277,6 +298,9 @@ object BankProject{
   //*******************************************************************************************************************
   def accountRegistration(): Unit = {
 
+    //In Account registration, we ask the user to input a new username for themselves, along with a password that they
+    //must confirm a second time. Finally, and purely for the purposes of this project, the user is asked if the
+    //account they are creating should be an admin account or not.
     println("Account creation. To return to the start screen, input 'back' as your username.")
     print("Username: ") //Ask the user for a username to use
     val un: String = scala.io.StdIn.readLine()
@@ -300,7 +324,7 @@ object BankProject{
       if (pw.equals(pw2)) { //Compare the two passwords.
         //This admin question is only asked for the purposes of this project.
         //Admins will be able to search for, and delete accounts compared to non-admin accounts.
-        //Inputting anything that isn't "true" is treated as false
+        //Inputting anything that isn't "true" is treated as false. Including "Maybe".
         var ad: Boolean = false
         try {
           print("\n(Input Boolean) Admin?: ")
@@ -312,7 +336,7 @@ object BankProject{
         }
 
         //Make a new UserAccount object, with admin, username and password vars as arguments, and
-        //put that as a value into the HashMap, with username as the key
+        //put that as a value into the HashMap, with username also used as the key
         accountHashMap.put(un, new UserAccount(ad, un, pw))
         //Since the account has been created, we want to return the user back to the start screen.
         state = en.start
@@ -337,6 +361,7 @@ object BankProject{
     } else {
       println("5) Log out")
     }
+    print("Input: ")
     try {
       val i: Int = scala.io.StdIn.readInt()
       println("\n\n\n")
@@ -371,6 +396,7 @@ object BankProject{
     println("Cash")
     println("Please input a number corresponding to the option you'd like.")
     println("1) Withdraw cash\n2) Deposit cash\n3) Check balance\n4) Transfer money\n5) Return")
+    print("Input: ")
     try {
       val i: Int = scala.io.StdIn.readInt()
       println("\n\n\n")
@@ -396,9 +422,9 @@ object BankProject{
     val i: Double = acc.getAccount.checkBalance()
     //The user's current amount of money from their active account is shown for convenience.
     //The "f" before the string means that it accepts formatting values. $i corresponds to the
-    //variable "i", and %9.2f means that the variable's value is formatted to show up to 9 digits,
-    //followed by a decimal point, then up to 2 digits afterwards. This keeps the displayed value
-    //to a financial appearance.
+    //variable "i", displaying it's value, and %9.2f means that the variable's value is formatted
+    //to show up to 9 digits, followed by a decimal point, then up to 2 digits afterwards.
+    //This keeps the displayed value to a financial appearance.
     print(f"You currently have £$i%9.2f.\nInput withdraw amount: £")
     try {
       val w: Double = scala.io.StdIn.readDouble()
@@ -412,7 +438,8 @@ object BankProject{
       //.toDouble to bring that formatted value back to a double again.
       val v: Double = f"$w%9.2f".toDouble
       //acc corresponds to the user's UserAccount object. getAccount returns the user's active account,
-      //which is an Account object, and on that Account object, we call the withdrawMoney method, passing
+      //which is an Account object, an abstract class that can be extended to either a CurrentAccount or
+      //a SavingsAccount, and on that Account object, we call the withdrawMoney method, passing
       //the user's formatted input double as an argument. The method returns a boolean; true if the
       //requested amount can be withdrawn without issue, false if the requested amount would cause problems,
       //such as withdrawing more money than what's in the account.
@@ -464,7 +491,8 @@ object BankProject{
 
   //*******************************************************************************************************************
   def checkBalance(): Unit = {
-    println("BankProject.Account: " + acc.getAccount.getAccName())
+    //CheckBalance simply returns the amount of money in the user's active account, and its name.
+    println("Account: " + acc.getAccount.getAccName())
     val i: Double = acc.getAccount.checkBalance()
     println(f"Amount: £$i%9.2f")
 
@@ -476,7 +504,7 @@ object BankProject{
       //We expected Enter to be pressed and we know it'll throw an error. If the user tried
       //anything else, what would we actually want to do besides let the user continue anyway?
       //There's no risk of wrong values being saved, or wrong behaviour being performed here.
-      //Nothing needs to be output or really handled
+      //Nothing needs to be output or really handled.
     }
     state = en.cash
   }
@@ -537,7 +565,7 @@ object BankProject{
   //*******************************************************************************************************************
   //The loan home screen. Two types of loans are offered.
   //The personal loan allows the user to take between £100-£20,000. A different interest amount
-  //if given based on the loan amount requested, and between that and 10% of the user's monthly
+  //is given based on the loan amount requested, and between that and 10% of the user's monthly
   //income, the user is judged whether they will be able to repay the loan + interest within
   //60 months/5 years.
   //The mortgage loan allows the user to take between £50,000-£800,000. A set interest amount,
@@ -547,6 +575,7 @@ object BankProject{
     println("Loans")
     println("Please input the number corresponding to the option you'd like.")
     println("1) Personal Loan\n2) Mortgage\n3) Return")
+    print("Input: ")
     try {
       val i: Int = scala.io.StdIn.readInt()
       println("\n\n\n")
@@ -563,9 +592,11 @@ object BankProject{
 
   //*******************************************************************************************************************
   def personalLoanHandler(): Unit = {
-
     //We ask the user for how much money they're like to take out as a loan. If they input a value
     //that is outside the given range, a custom exception is thrown to inform the user of this.
+    //Because of the catch block at the end of this method, nothing else in the try block is performed
+    //when the exception is thrown. An out of range loan will return the user back to the start of this
+    //method, but any value not recognised as a Double will return the user to the previous loan screen.
     print("Personal loan.\nPlease input the loan amount you would like to take out, between £100 and £20,000, or input 0 to return.\n£")
     try {
       val l: Double = scala.io.StdIn.readDouble()
@@ -583,11 +614,27 @@ object BankProject{
       val li: Double = f"$i%9.2f".toDouble
 
       try {
+        //totalMonthsToRepay is a recursive method that will return the amount of months needed to repay
+        //the attempted loan, factoring in monthly interest and a percentage of the user's income per month
+        //to repay the loan.
+        //lv is the requested loan input and li is the user's income input.
+        //personalLoanInterestAmt is a method that returns a Double, representing the interest amount that should be
+        //charged monthly, based on the requested loan amount.
+        //Since this is a Personal Loan, 10 is put down as the percentage amount of the user's income that can go
+        //towards repaying the loan. 60 is given as the maximum amount of months allowed to repay the loan.
+        //1 is given simply to start the recursive method off in keeping track of how many months have passed during
+        //its calculations.
+        //More details can be found in the loanRepayTime method.
         val totalMonthsToRepay: Int = loanRepayTime(lv, li, personalLoanInterestAmt(lv), 10, 60, 1)
+
+        //The amount of months is divided by 12 and kept as an Int, effectively trimming any decimal figures, to
+        //get the amount of years this converts to, and the modulus operator, %, gets the remainder of the months
+        //after dividing it by 12. Together, they break down multiple months, such as 27 months, into 2 years and
+        //3 months, making it easier for the user to know how long they can expect to take repaying this loan.
         val yrsToRepay: Int = totalMonthsToRepay / 12
         val mthsToRepay: Int = totalMonthsToRepay % 12
-        println("Years to repay: " + yrsToRepay)
-        println("Months to repay: " + mthsToRepay)
+        //println("Years to repay: " + yrsToRepay)
+        //println("Months to repay: " + mthsToRepay)
         //Ok, but now we need to make sure that the loan amount can even be put into the account.
         if (acc.getAccount.depositMoney(lv)) {
           println(f"Your loan request has been accepted and £$lv%9.2f has been deposited into " + acc.getAccount.getAccName())
@@ -599,6 +646,7 @@ object BankProject{
       } catch {
         case e: RepaymentTooLongException => println(e)
       }
+      //Upon loan successfully being given, we return the user back to the loan home screen
       state = en.loan
     } catch {
       case e: NumberFormatException => println("Not a valid number. Returning to General Loan screen."); state = en.loan
@@ -608,6 +656,11 @@ object BankProject{
 
   //*******************************************************************************************************************
   def mortgageHandler(): Unit = {
+    //A mortgage is offered in the same way as a Personal Loan, but with different values.
+    //The loan range that the user can request is different.
+    //The monthly interest is always 5%, regardless of the loan amount requested.
+    //75% of the user's income is used to repay the loan monthly, rather than 10%.
+    //The user has 480 months/40 years to repay the mortgage, instead of 60 months/5 years.
     print("Mortgage loan.\nPlease input the loan amount you would like to take out, between £50,000 and £800,000, or input 0 to return.\nPlease remember that, for this task, savings accounts won't hold more than £85,000.\n£")
     try {
       val l: Double = scala.io.StdIn.readDouble()
@@ -628,14 +681,12 @@ object BankProject{
         val totalMonthsToRepay: Int = loanRepayTime(lv, li, 5, 75, 480, 1)
         val yrsToRepay: Int = totalMonthsToRepay / 12
         val mthsToRepay: Int = totalMonthsToRepay % 12
-        println("Years to repay: " + yrsToRepay)
-        println("Months to repay: " + mthsToRepay)
-        //Ok, but now we need to make sure that the loan amount can even be put into the account.
+        //println("Years to repay: " + yrsToRepay)
+        //println("Months to repay: " + mthsToRepay)
         if (acc.getAccount.depositMoney(lv)) {
           println(f"Your loan request has been accepted and £$lv%9.2f has been deposited into " + acc.getAccount.getAccName())
           println(f"Assuming 75%% of your income is used to repay this loan each month, it is expected to take $yrsToRepay years and $mthsToRepay months to fully repay this loan with the information you have given.")
         } else {
-          //Account is refusing to accept so much money
           println("Failed to deposit into account. Please consider making a new account.")
         }
       } catch {
@@ -650,9 +701,13 @@ object BankProject{
 
   //*******************************************************************************************************************
   def accountManagementHome(): Unit = {
+    //This account management page refers to bank accounts, rather than the user's account.
+    //The user can check all of their current accounts and savings accounts, or make a new
+    //current or savings account.
     println("Account management")
     println("Please input the number corresponding to the option you'd like.")
     println("1) Get user account details\n2) Make new Current Account\n3) Make new Savings Account\n4) Return")
+    print("Input: ")
     try {
       val i: Int = scala.io.StdIn.readInt()
       println("\n\n\n")
@@ -670,15 +725,21 @@ object BankProject{
 
   //*******************************************************************************************************************
   def accountDetails(): Unit = {
+    //The user is not required to input any values.
+    //By referring to the UserAccount object saved to the variable "acc" when the user logged in,
+    //we make various calls to different methods within the object to get a variety of information.
+    //Get their username
     println("Username: " + acc.getUsername)
     if (acc.isAdmin) {
+      //If they are an admin, print and extra line to say that they are
       println("Has admin permissions")
     }
-    //
+    //Save both CurrentAccount and SavingsAccount lists to variables
     val currAccList: List[CurrentAccount] = acc.getCurrentAccountList
     val savAccList: List[SavingsAccount] = acc.getSavingAccountList
 
-    //What other details do you want to see?
+    //Print the length of the list so we know how many of that type of account they have,
+    //then iterate over each index to print the amount of money within that account and its name.
     println("Current accounts: " + currAccList.length)
     for (a <- currAccList.indices) {
       val b: Double = currAccList(a).checkBalance()
@@ -691,35 +752,39 @@ object BankProject{
 
     println("\nPress Enter to continue")
     try {
-      scala.io.StdIn.readChar() //Returns StringIndexOutOfBoundsException when you just press enter
+      scala.io.StdIn.readChar() //Returns StringIndexOutOfBoundsException when the user just presses enter
     } catch {
       case e: Throwable => //It doesn't actually matter what error is thrown from the input.
-      //We expected Enter to be pressed and we know it'll throw an error. If the user tried
-      //anything else, what would we actually want to do besides let the user continue anyway?
-      //There's no risk of wrong values being saved, or wrong behaviour being performed here.
-      //Nothing needs to be output or really handled
+      //We expected Enter to be pressed and we know it'll throw an error. If the user tried anything else,
+      //and any other error was thrown, we'd still want to return the user back to the earlier screen.
     }
     state = en.account
   }
 
   //*******************************************************************************************************************
   def makeCurrentAccountHandler(): Unit = {
-    //For the purposes of this task, up to 3 Current Accounts can be made for a single user
+    //For the purposes of this task, up to 3 Current Accounts can be made for a single user. This limit is
+    //imposed in the UserAccount file, under the createNewCurrentAccount and createNewSavingsAccount methods.
     println("Making a new Current Account for " + acc.getUsername)
+    //A new account can be given a name. In other areas of this program when interacting with the user's current
+    //accounts and savings accounts, the name is given to help the user identify each of them more easily.
     print("Please input a name for this Current Account to be known by: ")
-    val s: String = scala.io.StdIn.readLine()
-    if (acc.createNewCurrentAccount(s)) {
-      println("Your new Current Account \"" + s + "\" has been created.")
+    try {
+      val s: String = scala.io.StdIn.readLine()
+      if (acc.createNewCurrentAccount(s)) {
+        println("Your new Current Account \"" + s + "\" has been created.")
+      } else {
+        println("You already have 3 Current Accounts. You cannot create more.")
+      }
       state = en.account
-    } else {
-      println("You already have 3 Current Accounts. You cannot create more.")
-      state = en.account
+    }catch{
+      case e: StringIndexOutOfBoundsException => println("Your new account needs to have a name.")
     }
   }
 
   //*******************************************************************************************************************
   def makeSavingsAccountHandler(): Unit = {
-    //3 savings account max
+    //3 savings account max. Identical to the above method, except that this method creates Savings Accounts instead.
     println("Making a new Savings Account for " + acc.getUsername)
     print("Please input a name for this Savings Account to be known by: ")
     val s: String = scala.io.StdIn.readLine()
@@ -734,9 +799,11 @@ object BankProject{
 
   //*******************************************************************************************************************
   def switchAccountHome(): Unit = {
-
+    //The user can switch their active account to any other that they have created.
+    //By doing so, they can use other features on this program to interact with that account instead.
     println("Which type of account would you like to switch to?")
     println("1) Current Account\n2) Savings Account\n3) Return")
+    print("Input: ")
     try {
       val i: Int = scala.io.StdIn.readInt()
       println("\n\n\n")
@@ -755,6 +822,11 @@ object BankProject{
   def switchToCurrentAccount(): Unit = {
     //Retrieve list of current accounts from the user logged in. Display it neatly.
     //Then think of how you can make a match statement with unknown amount of options line up with the list
+
+    //The user has attempted to switch to one of their Current Accounts, so we retrieve the user's list of them.
+    //Though it shouldn't be possible, since a Current Account is made by default when a user first makes an
+    //account, and there is no way to delete them, a check is done to see if there are any Current Accounts in
+    //the list. If not, we inform the user of this and go back to the earlier screen.
     val list: List[CurrentAccount] = acc.getCurrentAccountList
     if (list.length <= 0) {
       println("You do not have any Current Accounts to switch to.")
@@ -762,15 +834,22 @@ object BankProject{
       return
     }
 
+    //Each entry in the list is output to the console with an incrementing number alongside it.
+    //To make it easier for the user, the incrementing value is adjusted slightly to appear as
+    //though it starts with 1, instead of 0 as list entries do.
     println("Please input the number corresponding to the account you'd like to switch to.")
     for (a <- list.indices) {
       println("Account " + (a + 1) + ") " + list(a).getAccName())
     }
+    print("Input: ")
     try {
+      //The user's input value is adjusted back to correspond to the list's starting values,
+      //and using it as an index argument, we get the appropriate CurrentAccount from the list.
+      //However, we save it to the variable as the superclass, Account, so that the variable
+      //remains open to possibly being switched to a SavingsAccount later.
       val newAcc: Account = list(scala.io.StdIn.readInt() - 1)
       acc.switchActiveAccount(newAcc)
       println("Switched account to " + newAcc.getAccName())
-      //state = en.switchAccountHome
     } catch {
       case e: IndexOutOfBoundsException => println("You picked a number out of range")
       case e: NumberFormatException => println("You didn't even type in a number!")
@@ -782,6 +861,9 @@ object BankProject{
 
   //*******************************************************************************************************************
   def switchToSavingsAccount(): Unit = {
+    //Identical to the above method, except this method checks and deals with the list of SavingsAccounts
+    //instead of CurrentAccounts. It is more likely that the user has no Savings Accounts, so checking
+    //that the list's length is greater than 0 is more important here.
     val list: List[SavingsAccount] = acc.getSavingAccountList
     if (list.length <= 0) {
       println("You do not have any Savings Accounts to switch to.")
@@ -793,7 +875,7 @@ object BankProject{
     for (a <- list.indices) {
       println("Account " + (a + 1) + ") " + list(a).getAccName())
     }
-
+    print("Input: ")
     try {
       val newAcc: Account = list(scala.io.StdIn.readInt() - 1)
       acc.switchActiveAccount(newAcc)
@@ -813,15 +895,15 @@ object BankProject{
   def adminOptions(): Unit = {
     //Menu screen for admins
     println("What would you like to do?")
-    println("1) Search for User BankProject.Account\n2) Give money to all accounts\n3) Delete User BankProject.Account\n4) Return")
+    println("1) Search for User Account\n2) Delete User Account\n3) Return")
+    print("Input: ")
     try {
       val i: Int = scala.io.StdIn.readInt()
       println("\n\n\n")
       i match {
         case 1 => state = en.searchForAccount
-        case 2 =>
-        case 3 => state = en.removeAccount
-        case 4 => state = en.home
+        case 2 => state = en.removeAccount
+        case 3 => state = en.home
         case _ => println("Your input did not match with any option. Please try again.")
       }
     } catch {
@@ -830,11 +912,11 @@ object BankProject{
   }
 
   //*******************************************************************************************************************
-  @throws(classOf[IntOutOfRangeException])
   def searchForAccountHandler(): Unit = {
-
+    //This method provides different types of searches that can be performed on the accountHashMap to find users.
     println("What kind of search would you like to perform?")
     println("1) Strict search\n2) Search with partial input\n3) Up to 2 character typo in input\n4) Return")
+    print("Input: ")
     try {
       val i: Int = scala.io.StdIn.readInt()
       if (i < 1 || i > 4) {
@@ -855,14 +937,18 @@ object BankProject{
           }
         }
       }
+    }catch{
+      case e: NumberFormatException => println("Your input did not match with any options. I don't think it was even a number! Please try again.")
     }
 
-
+    //The strict search simply uses the exact term input by the user as a key for the accountHashMap.
+    //If a result is found, the UserAccount value linked to that key is returned, and multiple method
+    //calls are performed on the object to get information out of it.
     def strictSearch(s: String): Unit = {
       try {
         val a: UserAccount = accountHashMap(s)
 
-        println("BankProject.Account found with username: " + a.getUsername)
+        println("Account found with username: " + a.getUsername)
         println("Admin: " + a.isAdmin)
         println("Current accounts: " + a.getCurrentAccountList.length)
         println(a.getCurrentAccountList)
@@ -875,6 +961,12 @@ object BankProject{
       }
     }
 
+    //The partial input search takes the input from the user and heavily adjusts the string so that each
+    //character is turned into a "upper case letter or lower case letter" or itself, and with each character
+    //having wildcards placed between them.
+    //In this way, the user only needs to know part of the username of the user they are looking for and can
+    //get a result, assuming the characters they input are at least in order of appearance in the user's name,
+    //even if they're not in the same index position along the name.
     def partialInputSearch(s: String): Unit = {
       import scala.util.matching.Regex
 
@@ -887,16 +979,16 @@ object BankProject{
       }
       val r: Regex = sa.r
 
-      /*Make an empty sequence of strings. Then, for each key/value pairing in the accountHashMap, use
-        the regex on the username to see if there's any kind of match or not. If a match is found,
-        recreate the sequence using the current values it has, with the current foreach iteration's username appended.
-        If the regex didn't find a match in the username, do nothing that time and continue the loop.
-       */
+      //Make an empty sequence of strings. Then, for each key/value pairing in the accountHashMap, use
+      //the regex on the username to see if there's any kind of match or not. If a match is found,
+      //recreate the sequence using the current values it has, with the current foreach iteration's
+      //username appended.
+      //If the regex didn't find a match in the username, do nothing that time and continue the loop.
       var l: Seq[String] = Seq[String]()
       accountHashMap.foreach { case (k, v) =>
         r.findFirstIn(k) match {
           case Some(x) => l = l :+ k //Got a result, but findFirstIn's result starts from where the match began.
-          //We want the full string though, so we append k to the seq instead.
+                                     //We want the full string though, so we append k to the seq instead.
           case None => //Didn't match, don't do anything this time and continue the loop
         }
       }
@@ -913,13 +1005,39 @@ object BankProject{
       }
     }
 
+    //The typo search assumes that the user has input up to two incorrect characters in place of where
+    //a correct character should be. To resolve this, two threads run at the same time, one performing
+    //a loop, dealing with a single typo, while the other performs a nested loop, dealing with two typos.
+    //In the single loop, for each iteration of the loop, the character at that index position is replaced
+    //with a single character wildcard and is used in a foreach iteration over the accountHashMap, comparing
+    //the new search term to each key.
+    //In the nested loop, the first loop does the same as the single loop, but the inner loop looks at the
+    //remaining characters ahead of the character that the first loop is on, and replaces those characters
+    //with single character wildcards too.
+    //While the nested loop covers all the same search possibilities that the first loop can, this method
+    //was intended to show the use of concurrently acting threads, and the ability to combine substrings and
+    //regexes to create a better searching experience.
     def typoSearch(s: String): Unit = {
       import scala.util.matching.Regex
 
+      //A HashSet is created for all the successful searches made later on. As a HashSet cannot contain
+      //duplicates, it is incredibly useful as this type of search is likely to find the same result
+      //multiple times.
       val l: mutable.HashSet[String] = mutable.HashSet()
 
+      //This class contains all the behaviour for the first thread of the two.
+      //By extending Thread and overriding the run() method, it becomes possible to initialise a thread
+      //that can act separately and concurrently with the rest of this program.
       class th1 extends Thread {
         override def run(): Unit = {
+          //From 0 until the length of the search term string, the loop's iteration is saved as "a"
+          //and is used to determine where to create separate substrings. It effectively creates a substring
+          //from the start of the search term up until the character we want to replace with a wildcard, then
+          //creates another substring, starting from the character after the wildcard-replaced character, until
+          //the end of the string. Between the two substrings, a regex is given for the single character wildcard.
+          //The string is turned into a Regex object and is used in a foreach iteration over the accountHashMap
+          //to see if there's a match with any of the username keys. If there is, the key is added to the earlier
+          //HashSet, as we want the full username for later, unchanged.
           var sa: String = s
           for (a <- 0 until s.length) {
             sa = s.substring(0, a) + "(.)" + s.substring(a+1)
@@ -935,8 +1053,14 @@ object BankProject{
         }
       }
 
+      //This class contains the behaviour for the second thread.
       class th2 extends Thread {
         override def run(): Unit = {
+          //Similar to the above, however, the inner loop and need for a second wildcard means
+          //that the search term is split up further. The inner loop always starts from wherever
+          //the outer loop currently is and proceeds to the end of the string from there.
+          //The loop variables are adjusted in the substring commands to prevent them from going
+          //beyond the string's length, as well as the inner loop's final iteration.
           var sa: String = s
           for (a <- 0 until s.length) {
             for(b <- a until s.length-1){
@@ -954,13 +1078,23 @@ object BankProject{
         }
       }
 
+      //The two threads are created here
       val t1 = new th1
       val t2 = new th2
 
+      //and the start method is called on both of them, letting themselves be initiated as a new process
+      //that can run concurrently. The second thread's join method is called so that this initial program
+      //waits for it to complete its task before proceeding. The second thread, with its nested loop, is
+      //likely to take longer than the first thread, and calling the first thread's join method would cause
+      //the second thread to wait for the first thread to finish before acting, defeating the purpose of
+      //running two threads at the same time.
       t1.start()
       t2.start()
       t2.join()
 
+      //The HashMap in which search results can be added to is checked here. If it is empty, we print to
+      //the user that no users were found, but if something was found, we simply iterate over the HashMap,
+      //printing each result.
       if (l.isEmpty) {
         println("No users were found with your search term.")
       } else {
@@ -972,27 +1106,11 @@ object BankProject{
     }
   }
 
-  //Create a new method for admins, to be able to play around with the money of all accounts.
-  //It'll use anonymous functions and maybe other types of functions, like currying, to complete stuff
-  //Double every account's money!
-
-  //Idea
-  //Search for an account
-  //"What would you like to do with their money?"
-  //Double it, half it, grant £500
-  //Curry function, first argument: user, second argument: function
-  //Higher order function?
-  //Add 10% of the user's money onto their account -> Composition (Work out 10%, use that as argument for "Add to account")
-
   //*******************************************************************************************************************
 
-
-
-
-
-
-
-  //*******************************************************************************************************************
+  //A simple method where the user is able to input a username, which is used to search the accountHashMap.
+  //If a result is found, that entry, the key/value pairing, is deleted, meaning the entire UserAccount linked
+  //to that user, and all of their bank accounts and money, are gone.
   def removeAccountHandler(): Unit = {
     println("Press Enter without input to return.")
     print("Enter the username of the user account you wish to delete: ")
@@ -1011,43 +1129,63 @@ object BankProject{
     } catch {
       case e: Throwable => state = en.admin
     }
-
   }
-
 
   //*******************************************************************************************************************
   def logOutHandler(): Unit = {
-    //Allow the user to leave and return to the start screen.
-    //This is different from exiting the program.
+    //Clears the "acc" variable from whichever UserAccount was just logged in, and returns the user to
+    //the program's start screen.
     acc = null
     state = en.start
   }
 
   //*******************************************************************************************************************
+  //In this method, UserAccount objects, and their List objects for CurrentAccounts and SavingsAccounts, are saved
+  //to a file, while usernames and passwords are saved to a MySQL database.
   def exitProgramHandler(): Unit = {
-    //This is where you should turn all the objects and vars into stuff on a file
-    //Anything else?
     import java.io._
 
     println("Saving user accounts to MySQL and to file")
 
     try {
-
+      //Using java libraries imported earlier in this method, a FileOutputStream is set up with a .txt file.
+      //An ObjectOutputStream is also set up, using the FileOutputStream to determine its destination.
       val fos: FileOutputStream = new FileOutputStream(new File("CallumUserAccounts.txt"))
       val oos: ObjectOutputStream = new ObjectOutputStream(fos)
 
       accountHashMap.foreach { case (k, v) =>
+        //For each key/value pairing in the accountHashMap, we take the key, knowing that it's the username,
+        //and call the value's getPassword method. These are saved ahead of time for the MySQL section later on.
         val un = k
         val pw = v.getPassword
 
+        //The value can immediately be written as an Object to the output stream, resulting in it being added
+        //to the file.
         oos.writeObject(v)
 
+        //The username key is used to complete a filename for a new pair of FileOutputStream and
+        //ObjectOutputStream.
+        val fosi: FileOutputStream = new FileOutputStream(new File(k + ".txt"))
+        val oosi: ObjectOutputStream = new ObjectOutputStream(fosi)
+
+        //The CurrentAccount List and SavingsAccount List are taken from the user's account
+        val list1 = v.getCurrentAccountList
+        val list2 = v.getSavingAccountList
+
+        //and written to the file named after the user.
+        oosi.writeObject(list1)
+        oosi.writeObject(list2)
+
+        //A MySQL statement is made to replace values in the userAccountsCallum table.
+        //This avoids errors when a duplicate is found, as the values of that duplicate are updated instead.
         val insertMySQL = """replace into userAccountsCallum (username,password) values(?,?)"""
         val preparedStatement: PreparedStatement = connection.prepareStatement(insertMySQL)
         preparedStatement.setString(1, un)
         preparedStatement.setString(2, pw)
         preparedStatement.execute()
       }
+
+      //The file output and object output streams are then closed
       fos.close()
       oos.close()
 
@@ -1057,22 +1195,21 @@ object BankProject{
       case e: ClassNotFoundException => e.printStackTrace()
     }
 
-
+    //With the files successfully written and the database updated, it's time to set programRunning to
+    //false, so that when this program returns to the mainLoop, it can finally escape it and reach the
+    //end of the program.
     println("Thank you for doing things!")
     programRunning = false
   }
 
-
-
-
   //*******************************************************************************************************************
 
   //*******************************************************************************************************************
 
   //*******************************************************************************************************************
 
-
-  //Ternary operator
+  //The Personal Loan method makes use of this ternary operator to decide on a value to return, based on the
+  //argument given to this method. The values returned represent an interest amount charged per month.
   def personalLoanInterestAmt(loanAmt: Double): Double = if (loanAmt < 1000.0) 15.0
   else if (loanAmt >= 1000.0 && loanAmt < 5000.0) 10.0
   else if (loanAmt >= 5000.0 && loanAmt < 10000.0) 7.5
@@ -1081,49 +1218,54 @@ object BankProject{
   //Recursive method
   @throws(classOf[RepaymentTooLongException])
   def loanRepayTime(loanAmt: Double, incomeAmt: Double, interestAmt: Double, incomePercentToRepay: Double, maxMonthsToRepay: Int, monthsToRepay: Int): Int = {
-    //Remember the recursive method idea.
-    //One loop through the method should resolve a month in the future.
-    //You got your loan amount, 10% of the user's income and an interest rate
-    //You reduce the loan amount by the income, then add the interest rate afterwards.
-    //You also add one onto a counter that represents months passed.
-    //When the loan becomes <=0, you can consider the loan fully paid off and can return the
-    //amount of months it took to pay off that loan.
-    //Similarly, if the amount of months exceeds 120 (10 years), you throw an exception to say
-    //that the loan won't be paid off within a reasonable time and will reject it.
 
+    //To begin with, each time this method is called from within this method, monthsToRepay is incrementing more
+    //and more. If it has reached a point where it is greater than the maximum amount of months we have given
+    //this loan to be repaid, we throw an exception to exit out of this recursive method entirely.
+    if(monthsToRepay>maxMonthsToRepay){
+      throw new RepaymentTooLongException("Personal loan repayment will take longer than " + maxMonthsToRepay + " months to repay. Loan rejected.")
+    }
 
+    //The percentage amount of income used (10% for Personal Loan, 75% for mortgage) is divided by 100, and the
+    //income amount itself is multiplied by that to determine the percentage of the income that can be used for
+    //the rest of this method. Because of the calculation, the result is formatted back to having only up to
+    //2 decimal places.
+    //For example, the user's income is 1000 and they attempted to take a mortgage out.
+    //The below line becomes 1000 * (75/100) = 750
     val div: Double = incomeAmt * (incomePercentToRepay / 100.0)
     val income: Double = f"$div%9.2f".toDouble
 
+    //If the remaining amount of loan to pay off is already at or below 0, this method immediately returns the
+    //monthsToRepay value as it was given to this instance of the method call.
     if (loanAmt <= 0.0) {
-      0
+      monthsToRepay
     } else {
+      //The interest amount is used as a percentage against the remaining amount of loan left to pay after the
+      //percentage of the user's income was taken off. This calculates the amount of money added onto the loan
+      //thanks to interest, after the remaining loan has already had the percentage of the user's income taken off.
+      //For example, the loan amount is 100,000 and the percentage of the user's income is 750, with an interest
+      //amount of 5.
+      //((loanAmt - income) * (interestAmt / 100.0 )) becomes ((100,000 - 750) * (5 / 100.0)) = 4962.5
+      //That then means that (loanAmt - income) + 4962.5 becomes (100,000 - 750) + 4962.5 = 104,212.5
       val remainingAmt: Double = (loanAmt - income) + ((loanAmt - income) * (interestAmt / 100.0))
-      //If remainingAmt > loanAmt, you know you're not going to be able to repay it. Break straight away
+      //If remainingAmt is higher than the method's initial loanAmt, you know you're not going to be able to
+      //repay the loan, as the amount to repay each month is only going up. Break from this method straight away.
       if (remainingAmt > loanAmt) {
         throw new RepaymentTooLongException("Your income is too low to be able to pay off this loan. Personal loan rejected.")
       } else {
-        val r: Int = monthsToRepay + loanRepayTime(remainingAmt, incomeAmt, interestAmt, incomePercentToRepay, maxMonthsToRepay, 1)
-        if (r > maxMonthsToRepay) {
-          //Break. It'll take too long to repay the loan
-          throw new RepaymentTooLongException("Personal loan repayment will take longer than " + maxMonthsToRepay + " months to repay. Loan rejected.")
-        }
+        //However, if the amount left to pay is lower than how it started, there's potential to be able to repay it all.
+        //With the new amount of loan left to repay, a call to this method is done once again, with monthsToRepay
+        //increasing by 1.
+        //In this way, each call to this method represents one month of being able to pay off the loan, and the value
+        //of r becomes the amount of times that this method has been called, or the amount of months it would take to
+        //repay the entire loan.
+        val r: Int = loanRepayTime(remainingAmt, incomeAmt, interestAmt, incomePercentToRepay, maxMonthsToRepay, monthsToRepay+1)
+
+        //When (loanAmt<=0.0) is true, the method will return a value back here, going through each of the earlier
+        //calls to this method from this point, each time passing the value of "r" back to the earlier call until
+        //it can return to the Personal Loan or Mortgage method that started this recursive method off.
         r
       }
     }
   }
-
 }
-
-/*An Enumeration object with Values representing every screen that can exist within this program.
-  Effectively used as a state machine, where a single Value decides which behaviour should be performed at
-  any given moment, without disruption or complexity from variables set by other Values
-  ie. An if-else with too many requirements to reach one particular screen over others.
- */
-
-
-//Check enumerations.DonutsEnumeration.scala for a way to implement abstract classes into this.
-//It'll make things tidier up at line 50 or so
-
-
-

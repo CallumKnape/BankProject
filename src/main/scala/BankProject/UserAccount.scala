@@ -7,7 +7,6 @@ import java.io.Serializable
 @SerialVersionUID(114L)
 class UserAccount (admin: Boolean, un: String, pw: String, list1: List[CurrentAccount], list2: List[SavingsAccount])  extends Serializable{
 
-
   private val adm: Boolean = admin
   private val username: String = un
   private val password: String = pw

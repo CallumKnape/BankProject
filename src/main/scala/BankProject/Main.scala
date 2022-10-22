@@ -1,6 +1,6 @@
 package BankProject
 
-import java.sql.{Connection, DriverManager, PreparedStatement, Blob}
+import java.sql.{Connection, DriverManager, PreparedStatement}
 import scala.collection.mutable
 
 object Main{

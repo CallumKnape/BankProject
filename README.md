@@ -2,6 +2,16 @@
 
 Included is a project exploring many aspects taught during the Scala Training Program from Wiley Edge, to prepare for a Scala Developer role with a client.
 
+
+___
+## PLEASE CHECK BEFORE RUNNING PROGRAM
+
+**To connect to the MySQL database, a password is written on Main.scala at line 96.** 
+
+**PLEASE CHANGE THIS TO MATCH YOUR DATABASE SETTINGS.**
+
+
+___
 ## Contents
 
 ### - Abstract Classes, Case Classes, Polymorphism and Inheritance
